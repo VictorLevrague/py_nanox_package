@@ -25,7 +25,7 @@ for file in os.listdir(chemical_yield_dir):
 
 setup(
     name = 'nanox_low_energy',
-    version = '1.1.0',
+    version = '1.1.2',
     description = "Calculates cell survivals with NanOx low energy hypotheses",
     author = 'Victor Levrague',
     packages = ["nanox_low_energy"],

@@ -20,6 +20,7 @@ BETAG = pd.DataFrame({"HSG" : [0.0961], "V79" : [0.0405], "CHO-K1" : [0.0625]}) 
 MOLECULE_PER_100_EV_IN_MOL_PER_J = 1 / (9.6 * 10**6)
 
 radius_nucleus_cell_line = pd.DataFrame({"HSG" : [7], "V79" : [4.9], "CHO-K1" : [5.9]}) # µm
+simulated_radius_nucleus_cell_line = pd.DataFrame({"HSG" : [6.7], "V79" : [5.2], "CHO-K1" : [3.85]}) # µm
 length_of_cylinderslice_cell = 1 #µm
 
 
@@ -65,15 +66,13 @@ def cell_survival_global(ei, ef, cell_line, particle, option = "cumulated"):
     :return: returns the cell survival to global events of one cell
     """
     assert (particle == "Helium")
-    h = _chemical_yield_and_primitive()[1]
-    nu = 0.8
-    volume_sensitive = (4 / 3) * np.pi * (radius_nucleus_cell_line[cell_line].iloc[0]) ** 3
-    #volume_sensitive = np.pi * length_of_cylinderslice_cell * (radius_nucleus_cell_line[cell_line].iloc[0])**2
+    h = chemical_yield_and_primitive()[1]
+    volume_sensitive = (4 / 3) * np.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0]) ** 3
     sensitive_mass = WATER_DENSITY * volume_sensitive #kg
     g_ref = 6.33582
     beta_ref = BETAG[cell_line].iloc[0]
 
-    z_restricted = (nu / (sensitive_mass * g_ref)) * (h(ei) - h(ef)) * KEV_IN_J
+    z_restricted = (1 / (sensitive_mass * g_ref)) * (h(ei) - h(ef)) * KEV_IN_J
 
     match option:
         case "cumulated":
@@ -113,7 +112,7 @@ def cell_survival_total(ei, ef, cell_line, particle, physics_list, option = "cum
 
     return lethal_survival * global_survival
 
-def _cell_survival_lethal_global_obsolete(ei, ef, cell_line, particle, physics_list, option = "cumulated"):
+def cell_survival_lethal_without_global_correction(ei, ef, cell_line, particle, physics_list, option = "cumulated"):
     """
     !!!!!!
     This method is considering only lethal events, but their are calculated with alpha coefficients that contains
@@ -228,7 +227,9 @@ def _plot_dn1_de():
 def _dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list, method_threshold = "Interp"):
     """
     Returns a continous function that calculates dn1_de in function of energy. It depends on the radiobiological alpha
-    coefficient. These are extracted from alpha tables that Mario Alcoler-Avila calculated.
+    coefficient. These are extracted from alpha tables that Mario Alcoler-Avila calculated. These coefficients are
+    fitted on curves that contain both lethal and global events. Hence, a correction is needed to keep only lethal
+    events.
 
     The data are smoothered via a moving average method.
 
@@ -242,26 +243,25 @@ def _dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_lis
     alpha_table = pd.read_csv(f"{resources_dir}/AlphasTables/alpha_He_{cell_line}.csv")
     alpha_discrete_from_tables = alpha_table["Alpha (Gy-1)"].to_numpy().astype(float)
     e_discrete_from_tables = alpha_table["E(MeV/n)"].to_numpy().astype(float)*1000*4   #keV
-    surface_centerslice_cell_line = math.pi * radius_nucleus_cell_line[cell_line].iloc[0] ** 2   # µm²
+    surface_centerslice_cell_line = math.pi * radius_nucleus_cell_line[cell_line].iloc[0] ** 2   #µm²
     let_discrete_from_tables = alpha_table["LET (keV/um)"].to_numpy().astype(float)
     _conversion_energy_in_let_srim = let_discrete_from_tables
     _conversion_energy_in_let_g4 = _conversion_energy_in_let(f"G4_{physics_list}", e_discrete_from_tables)
 
     e_discrete_from_tables_with_0 = np.insert(e_discrete_from_tables, 0, 0, axis=0)
 
-    nu = 0.8
-    volume_sensitive = (4/3) * np.pi * (radius_nucleus_cell_line[cell_line].iloc[0])**3
-    #volume_sensitive = np.pi * length_of_cylinderslice_cell * (radius_nucleus_cell_line[cell_line].iloc[0]) ** 2
+    volume_sensitive = (4/3) * np.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0])**3
     sensitive_mass = WATER_DENSITY * volume_sensitive
     beta_g = 0.0961
-    G = _chemical_yield_and_primitive()[0]
+    g_ref = 6.33582
+    G = chemical_yield_and_primitive()[0]
 
     _lethal_global_part = (-np.log(1 - alpha_discrete_from_tables  * UNIT_COEFFICIENT_A
                              * _conversion_energy_in_let_srim / surface_centerslice_cell_line)
                           /
                           (length_of_cylinderslice_cell * _conversion_energy_in_let_g4))
 
-    _global_correction = (beta_g * ((G(e_discrete_from_tables) * nu) / sensitive_mass)**2
+    _global_correction = (beta_g * (G(e_discrete_from_tables) / (sensitive_mass * g_ref))**2
                           * _conversion_energy_in_let_g4 * length_of_cylinderslice_cell) * (KEV_IN_J**2)
 
     dn1_de = _lethal_global_part - _global_correction
@@ -302,12 +302,13 @@ def _number_of_lethal_events_for_alpha_traversals(dn1_de_function, max_energy):
     return n1
 
 
-def _chemical_yield_and_primitive():
+def chemical_yield_and_primitive():
     resources_dir = path.join(path.dirname(__file__), 'resources')
     chemical_yields_file = pd.read_csv(f"{resources_dir}/ChemicalYield/chemical_yields_HELIUM.csv")
     energy = chemical_yields_file["Energy (MeV/n)"] * 4000 # keV
     chemical_yields = chemical_yields_file["Chemical yield"]
-    chemical_yields_function_as_energy = interpolate.interp1d(energy, chemical_yields, kind= "linear")
+    chemical_yields_function_as_energy = interpolate.interp1d(energy, chemical_yields, kind= "linear",
+                                                              fill_value="extrapolate")
     chemical_yields_primitive = scipy.integrate.cumtrapz(chemical_yields_function_as_energy(energy), energy, initial=0)
     chemical_yields_primitive_function = interpolate.interp1d(energy, chemical_yields_primitive, kind="linear")
     return chemical_yields_function_as_energy, chemical_yields_primitive_function
@@ -372,11 +373,11 @@ class InvalidOption(Exception):
     pass
 
 # print()
-# ei = [10000, 10000]
-# ef = [5000, 8000]
-# print("previous cell survival lethal: ", _cell_survival_lethal_global_obsolete(ei, ef, "HSG",
-#                                                                                particle = "Helium",
-#                                                                                physics_list = "em"))
+# ei = [7500]
+# ef = [0]
+# print("previous cell survival lethal: ", cell_survival_lethal_without_global_correction(ei, ef, "HSG",
+#                                                                                  particle = "Helium",
+#                                                                                  physics_list = "em"))
 # print("cell survival lethal: ",cell_survival_lethal(ei, ef, "HSG", particle = "Helium", physics_list = "em"))
 # print("cell survival global: ", cell_survival_global(ei, ef, "HSG", particle = "Helium"))
 # print("cell survival total: ", cell_survival_total(ei, ef, "HSG", particle = "Helium", physics_list = "em"))
