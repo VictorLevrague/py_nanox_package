@@ -40,7 +40,7 @@ def cell_survival_lethal(ei, ef, cell_line, particle, physics_list, option="cumu
     dn1_de_continuous_pre_calculated = \
         _dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list)
     emax = np.max(ei)
-    n1_function = _number_of_lethal_events_for_alpha_traversals(dn1_de_continuous_pre_calculated, emax)
+    n1_function = number_of_lethal_events_for_alpha_traversals(dn1_de_continuous_pre_calculated, emax)
 
     n_lethal = (n1_function(ei) - n1_function(ef))
 
@@ -66,13 +66,9 @@ def cell_survival_global(ei, ef, cell_line, particle, option = "cumulated"):
     :return: returns the cell survival to global events of one cell
     """
     assert (particle == "Helium")
-    h = chemical_yield_and_primitive()[1]
-    volume_sensitive = (4 / 3) * np.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0]) ** 3
-    sensitive_mass = WATER_DENSITY * volume_sensitive #kg
-    g_ref = 6.33582
     beta_ref = BETAG[cell_line].iloc[0]
 
-    z_restricted = (1 / (sensitive_mass * g_ref)) * (h(ei) - h(ef)) * KEV_IN_J
+    z_restricted = z_restricted_func(ei, ef, cell_line)
 
     match option:
         case "cumulated":
@@ -132,7 +128,7 @@ def cell_survival_lethal_without_global_correction(ei, ef, cell_line, particle, 
     assert(particle == "Helium")
     dn1_de_continuous_pre_calculated = _dn1_de_continuous_mv_tables(cell_line, physics_list)
     emax = np.max(ei)
-    n1 = _number_of_lethal_events_for_alpha_traversals(dn1_de_continuous_pre_calculated, emax)
+    n1 = number_of_lethal_events_for_alpha_traversals(dn1_de_continuous_pre_calculated, emax)
 
     n_run = (n1(ei) - n1(ef))
 
@@ -144,6 +140,14 @@ def cell_survival_lethal_without_global_correction(ei, ef, cell_line, particle, 
         case _:
             raise InvalidOption("Choose cumulated or mean_to_one_impact option")
     return lethal_survival
+
+def z_restricted_func(ei, ef, cell_line):
+    h = chemical_yield_and_primitive()[1]
+    volume_sensitive = (4 / 3) * np.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0]) ** 3
+    sensitive_mass = WATER_DENSITY * volume_sensitive #kg
+    g_ref = 6.33582
+    z_restricted = (1 / (sensitive_mass * g_ref)) * (h(ei) - h(ef)) * KEV_IN_J
+    return z_restricted
 
 def _dn1_de_continuous_mv_tables(cell_line, physics_list, method_threshold = "Interp"):
     """
@@ -289,7 +293,7 @@ def _dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_lis
 
 
 
-def _number_of_lethal_events_for_alpha_traversals(dn1_de_function, max_energy):
+def number_of_lethal_events_for_alpha_traversals(dn1_de_function, max_energy):
     """
     Returns the function that converts an energy E into the cumulated number of lethal damage from 0 to E
     """

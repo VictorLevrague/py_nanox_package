@@ -3,3 +3,4 @@ from .py_nanox_low_energy import cell_survival_global
 from .py_nanox_low_energy import cell_survival_total
 from .py_nanox_low_energy import chemical_yield_and_primitive
 from .py_nanox_low_energy import cell_survival_lethal_without_global_correction
+from .py_nanox_low_energy import number_of_lethal_events_for_alpha_traversals
