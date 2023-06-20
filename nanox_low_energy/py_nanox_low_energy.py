@@ -180,7 +180,7 @@ def _dn1_de_continuous_mv_tables(cell_line, particle, physics_list, method_thres
     surface_centerslice_cell_line = math.pi * radius_nucleus_cell_line[cell_line].iloc[0] ** 2   # µm²
     let_discrete_from_tables = alpha_table["LET (keV/um)"].to_numpy().astype(float)
     _conversion_energy_in_let_srim = let_discrete_from_tables
-    _conversion_energy_in_let_g4 = _conversion_energy_in_let(f"G4_{physics_list}", e_discrete_from_tables)
+    _conversion_energy_in_let_g4 = _conversion_energy_in_let(f"G4_{physics_list}", e_discrete_from_tables, particle)
 
     e_discrete_from_tables_with_0 = np.insert(e_discrete_from_tables, 0, 0, axis=0)
 
@@ -327,7 +327,7 @@ def chemical_yield_and_primitive():
     return chemical_yields_function_as_energy, chemical_yields_primitive_function
 
 
-def _conversion_energy_in_let(data_base, energy):
+def _conversion_energy_in_let(data_base, energy, particle):
     """
     Returns a function that converts an input energy into the corresponding LET from a given data base
 
@@ -337,7 +337,15 @@ def _conversion_energy_in_let(data_base, energy):
     energy in keV
     """
     try:
-        resource_path = f"resources/E_TEL/conversion_tables_{data_base}.xlsx"
+
+        # Helium
+        if particle == 1 :
+            resource_path = f"resources/E_TEL/conversion_tables_{data_base}_He.xlsx"
+
+        # Lithium
+        else :
+            resource_path = f"resources/E_TEL/conversion_tables_{data_base}_Li7.xlsx"
+
         file_content = pkg_resources.resource_stream(__name__, resource_path)
         tables__conversion_energy_in_let = pd.read_excel(file_content).to_records()
     except:
