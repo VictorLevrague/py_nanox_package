@@ -149,7 +149,7 @@ def z_restricted_func(ei, ef, cell_line):
     z_restricted = (1 / (sensitive_mass * g_ref)) * (h(ei) - h(ef)) * KEV_IN_J
     return z_restricted
 
-def _dn1_de_continuous_mv_tables(cell_line, physics_list, method_threshold = "Interp"):
+def _dn1_de_continuous_mv_tables(cell_line, particle, physics_list, method_threshold = "Interp"):
     """
     Returns a continous function that calculates dn1_de in function of energy. It depends on the radiobiological alpha
     coefficient. These are extracted from alpha tables that Mario Alcoler-Avila calculated.
@@ -165,7 +165,16 @@ def _dn1_de_continuous_mv_tables(cell_line, physics_list, method_threshold = "In
     #resource_path = f"resources/AlphasTables/alpha_He_{cell_line}.csv"
     # file_content = pkg_resources.resource_stream(__name__, resource_path)
     resources_dir = path.join(path.dirname(__file__), 'resources')
-    alpha_table = pd.read_csv(f"{resources_dir}/AlphasTables/alpha_He_{cell_line}.csv")
+
+    # Helium :
+    if particle == 1 :
+        alpha_table = pd.read_csv(f"{resources_dir}/AlphasTables/alpha_He_{cell_line}.csv")
+
+    # Lithium :
+    else :
+        alpha_table = pd.read_csv(f"{resources_dir}/AlphasTables/alpha_Li_{cell_line}.csv")
+
+
     alpha_discrete_from_tables = alpha_table["Alpha (Gy-1)"].to_numpy().astype(float)
     e_discrete_from_tables = alpha_table["E(MeV/n)"].to_numpy().astype(float)*1000*4   #keV
     surface_centerslice_cell_line = math.pi * radius_nucleus_cell_line[cell_line].iloc[0] ** 2   # µm²
