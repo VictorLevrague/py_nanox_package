@@ -338,13 +338,13 @@ def _conversion_energy_in_let(data_base, energy, particle):
     """
     try:
 
-        # Helium
-        if particle == 1 :
-            resource_path = f"resources/E_TEL/conversion_tables_{data_base}_He.xlsx"
-
         # Lithium
-        else :
+        if particle == 2 :
             resource_path = f"resources/E_TEL/conversion_tables_{data_base}_Li7.xlsx"
+
+        # Helium
+        else :
+            resource_path = f"resources/E_TEL/conversion_tables_{data_base}_He.xlsx"
 
         file_content = pkg_resources.resource_stream(__name__, resource_path)
         tables__conversion_energy_in_let = pd.read_excel(file_content).to_records()
