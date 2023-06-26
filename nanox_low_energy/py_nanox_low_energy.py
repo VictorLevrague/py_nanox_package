@@ -166,13 +166,13 @@ def _dn1_de_continuous_mv_tables(cell_line, particle, physics_list, method_thres
     # file_content = pkg_resources.resource_stream(__name__, resource_path)
     resources_dir = path.join(path.dirname(__file__), 'resources')
 
-    # Helium :
-    if particle == 1 :
-        alpha_table = pd.read_csv(f"{resources_dir}/AlphasTables/alpha_He_{cell_line}.csv")
-
     # Lithium :
-    else :
+    if particle == 2 :
         alpha_table = pd.read_csv(f"{resources_dir}/AlphasTables/alpha_Li_{cell_line}.csv")
+
+    # Helium :
+    else :
+        alpha_table = pd.read_csv(f"{resources_dir}/AlphasTables/alpha_He_{cell_line}.csv")
 
 
     alpha_discrete_from_tables = alpha_table["Alpha (Gy-1)"].to_numpy().astype(float)
