@@ -4,3 +4,5 @@ from .py_nanox_low_energy import cell_survival_total
 from .py_nanox_low_energy import chemical_yield_and_primitive
 from .py_nanox_low_energy import cell_survival_lethal_without_global_correction
 from .py_nanox_low_energy import number_of_lethal_events_for_alpha_traversals
+from .py_nanox_low_energy import dn1_de_continuous_mv_tables
+from .py_nanox_low_energy import dn1_de_continuous_mv_tables_global_events_correction

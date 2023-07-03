@@ -38,7 +38,7 @@ def cell_survival_lethal(ei, ef, cell_line, particle, physics_list, option="cumu
     """
     assert (particle == "Helium")
     dn1_de_continuous_pre_calculated = \
-        _dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list)
+        dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list)
     emax = np.max(ei)
     n1_function = number_of_lethal_events_for_alpha_traversals(dn1_de_continuous_pre_calculated, emax)
 
@@ -126,7 +126,7 @@ def cell_survival_lethal_without_global_correction(ei, ef, cell_line, particle, 
     :return: returns the cell survival to lethal events of one cell
     """
     assert(particle == "Helium")
-    dn1_de_continuous_pre_calculated = _dn1_de_continuous_mv_tables(cell_line, physics_list)
+    dn1_de_continuous_pre_calculated = dn1_de_continuous_mv_tables(cell_line, physics_list)
     emax = np.max(ei)
     n1 = number_of_lethal_events_for_alpha_traversals(dn1_de_continuous_pre_calculated, emax)
 
@@ -149,7 +149,7 @@ def z_restricted_func(ei, ef, cell_line):
     z_restricted = (1 / (sensitive_mass * g_ref)) * (h(ei) - h(ef)) * KEV_IN_J
     return z_restricted
 
-def _dn1_de_continuous_mv_tables(cell_line, physics_list, method_threshold = "Interp"):
+def dn1_de_continuous_mv_tables(cell_line, physics_list, method_threshold = "Interp"):
     """
     Returns a continous function that calculates dn1_de in function of energy. It depends on the radiobiological alpha
     coefficient. These are extracted from alpha tables that Mario Alcoler-Avila calculated.
@@ -201,7 +201,7 @@ def _dn1_de_continuous_mv_tables(cell_line, physics_list, method_threshold = "In
 
 def _plot_dn1_de():
     energy = np.linspace(400, 200000, 200000)
-    dn1_dE = _dn1_de_continuous_mv_tables("HSG", "em")
+    dn1_dE = dn1_de_continuous_mv_tables("HSG", "em")
     fig, ax = plt.subplots(figsize=(15, 12))
     plt.tick_params(axis='both', which='major', pad=9, length=15, width=2, colors='black')
     plt.minorticks_on()
@@ -228,7 +228,7 @@ def _plot_dn1_de():
     plt.show()
     return dn1_dE
 
-def _dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list, method_threshold = "Interp"):
+def dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list, method_threshold = "Interp"):
     """
     Returns a continous function that calculates dn1_de in function of energy. It depends on the radiobiological alpha
     coefficient. These are extracted from alpha tables that Mario Alcoler-Avila calculated. These coefficients are
