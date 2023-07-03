@@ -400,5 +400,5 @@ class InvalidOption(Exception):
 #                                                                                  particle = "Helium",
 #                                                                                  physics_list = "em"))
 # print("cell survival lethal: ",cell_survival_lethal(ei, ef, "HSG", particle = "Helium", physics_list = "em"))
-# print("cell survival global: ", cell_survival_global(ei, ef, "HSG", particle = "Helium"))
+# print("cell survival global: ", cell_survival_global(ei, ef, "HSG", particle = "Helium", physics_list = "em"))
 # print("cell survival total: ", cell_survival_total(ei, ef, "HSG", particle = "Helium", physics_list = "em"))
