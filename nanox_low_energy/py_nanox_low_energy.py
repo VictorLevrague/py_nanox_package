@@ -149,7 +149,7 @@ def z_restricted_func(ei, ef, cell_line):
     z_restricted = (1 / (sensitive_mass * g_ref)) * (h(ei) - h(ef)) * KEV_IN_J
     return z_restricted
 
-def dn1_de_continuous_mv_tables(cell_line, particle, physics_list, method_threshold = "Interp"):
+def dn1_de_continuous_mv_tables(cell_line, physics_list, particle = 0, method_threshold = "Interp"):
     """
     Returns a continous function that calculates dn1_de in function of energy. It depends on the radiobiological alpha
     coefficient. These are extracted from alpha tables that Mario Alcoler-Avila calculated.
@@ -210,7 +210,7 @@ def dn1_de_continuous_mv_tables(cell_line, particle, physics_list, method_thresh
 
 def _plot_dn1_de():
     energy = np.linspace(400, 200000, 200000)
-    dn1_dE = dn1_de_continuous_mv_tables("HSG", "em")
+    dn1_dE = dn1_de_continuous_mv_tables("HSG", "em") ###TO DO: change the call of func
     fig, ax = plt.subplots(figsize=(15, 12))
     plt.tick_params(axis='both', which='major', pad=9, length=15, width=2, colors='black')
     plt.minorticks_on()
@@ -327,7 +327,7 @@ def chemical_yield_and_primitive():
     return chemical_yields_function_as_energy, chemical_yields_primitive_function
 
 
-def _conversion_energy_in_let(data_base, energy, particle):
+def _conversion_energy_in_let(data_base, energy, particle = 0):
     """
     Returns a function that converts an input energy into the corresponding LET from a given data base
 
@@ -394,11 +394,11 @@ class InvalidOption(Exception):
     pass
 
 # print()
-# ei = [7500]
-# ef = [0]
+# ei = [7500,7000]
+# ef = [0,0]
 # print("previous cell survival lethal: ", cell_survival_lethal_without_global_correction(ei, ef, "HSG",
 #                                                                                  particle = "Helium",
 #                                                                                  physics_list = "em"))
 # print("cell survival lethal: ",cell_survival_lethal(ei, ef, "HSG", particle = "Helium", physics_list = "em"))
-# print("cell survival global: ", cell_survival_global(ei, ef, "HSG", particle = "Helium", physics_list = "em"))
+# print("cell survival global: ", cell_survival_global(ei, ef, "HSG", particle = "Helium"))
 # print("cell survival total: ", cell_survival_total(ei, ef, "HSG", particle = "Helium", physics_list = "em"))
