@@ -149,7 +149,7 @@ def z_restricted_func(ei, ef, cell_line):
     z_restricted = (1 / (sensitive_mass * g_ref)) * (h(ei) - h(ef)) * KEV_IN_J
     return z_restricted
 
-def dn1_de_continuous_mv_tables(cell_line, physics_list, method_threshold = "Interp"):
+def dn1_de_continuous_mv_tables(cell_line, particle, physics_list, method_threshold = "Interp"):
     """
     Returns a continous function that calculates dn1_de in function of energy. It depends on the radiobiological alpha
     coefficient. These are extracted from alpha tables that Mario Alcoler-Avila calculated.
@@ -165,13 +165,22 @@ def dn1_de_continuous_mv_tables(cell_line, physics_list, method_threshold = "Int
     #resource_path = f"resources/AlphasTables/alpha_He_{cell_line}.csv"
     # file_content = pkg_resources.resource_stream(__name__, resource_path)
     resources_dir = path.join(path.dirname(__file__), 'resources')
-    alpha_table = pd.read_csv(f"{resources_dir}/AlphasTables/alpha_He_{cell_line}.csv")
+
+    # Lithium :
+    if particle == 2 :
+        alpha_table = pd.read_csv(f"{resources_dir}/AlphasTables/alpha_Li_{cell_line}.csv")
+
+    # Helium :
+    else :
+        alpha_table = pd.read_csv(f"{resources_dir}/AlphasTables/alpha_He_{cell_line}.csv")
+
+
     alpha_discrete_from_tables = alpha_table["Alpha (Gy-1)"].to_numpy().astype(float)
     e_discrete_from_tables = alpha_table["E(MeV/n)"].to_numpy().astype(float)*1000*4   #keV
     surface_centerslice_cell_line = math.pi * radius_nucleus_cell_line[cell_line].iloc[0] ** 2   # µm²
     let_discrete_from_tables = alpha_table["LET (keV/um)"].to_numpy().astype(float)
     _conversion_energy_in_let_srim = let_discrete_from_tables
-    _conversion_energy_in_let_g4 = _conversion_energy_in_let(f"G4_{physics_list}", e_discrete_from_tables)
+    _conversion_energy_in_let_g4 = _conversion_energy_in_let(f"G4_{physics_list}", e_discrete_from_tables, particle)
 
     e_discrete_from_tables_with_0 = np.insert(e_discrete_from_tables, 0, 0, axis=0)
 
@@ -318,7 +327,7 @@ def chemical_yield_and_primitive():
     return chemical_yields_function_as_energy, chemical_yields_primitive_function
 
 
-def _conversion_energy_in_let(data_base, energy):
+def _conversion_energy_in_let(data_base, energy, particle):
     """
     Returns a function that converts an input energy into the corresponding LET from a given data base
 
@@ -328,7 +337,15 @@ def _conversion_energy_in_let(data_base, energy):
     energy in keV
     """
     try:
-        resource_path = f"resources/E_TEL/conversion_tables_{data_base}.xlsx"
+
+        # Lithium
+        if particle == 2 :
+            resource_path = f"resources/E_TEL/conversion_tables_{data_base}_Li7.xlsx"
+
+        # Helium
+        else :
+            resource_path = f"resources/E_TEL/conversion_tables_{data_base}_He.xlsx"
+
         file_content = pkg_resources.resource_stream(__name__, resource_path)
         tables__conversion_energy_in_let = pd.read_excel(file_content).to_records()
     except:
@@ -383,5 +400,5 @@ class InvalidOption(Exception):
 #                                                                                  particle = "Helium",
 #                                                                                  physics_list = "em"))
 # print("cell survival lethal: ",cell_survival_lethal(ei, ef, "HSG", particle = "Helium", physics_list = "em"))
-# print("cell survival global: ", cell_survival_global(ei, ef, "HSG", particle = "Helium"))
+# print("cell survival global: ", cell_survival_global(ei, ef, "HSG", particle = "Helium", physics_list = "em"))
 # print("cell survival total: ", cell_survival_total(ei, ef, "HSG", particle = "Helium", physics_list = "em"))
