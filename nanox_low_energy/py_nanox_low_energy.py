@@ -18,6 +18,7 @@ WATER_DENSITY = 1e-15  #kg/µm³
 UNIT_COEFFICIENT_A = KEV_IN_J / WATER_DENSITY # Gy.µm³.keV-1
 BETAG = pd.DataFrame({"HSG" : [0.0961], "V79" : [0.0405], "CHO-K1" : [0.0625]}) #Gy-2. constant of Monini et al. 2019
 MOLECULE_PER_100_EV_IN_MOL_PER_J = 1 / (9.6 * 10**6)
+ETA = 0.8 # Fraction of energy related to biological damage
 
 radius_nucleus_cell_line = pd.DataFrame({"HSG" : [7], "V79" : [4.9], "CHO-K1" : [5.9]}) # µm
 simulated_radius_nucleus_cell_line = pd.DataFrame({"HSG" : [6.7], "V79" : [5.2], "CHO-K1" : [3.85]}) # µm
@@ -146,13 +147,13 @@ def z_restricted_func(ei, ef, cell_line):
     volume_sensitive = (4 / 3) * np.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0]) ** 3
     sensitive_mass = WATER_DENSITY * volume_sensitive #kg
     g_ref = 6.33582
-    z_restricted = (1 / (sensitive_mass * g_ref)) * (h(ei) - h(ef)) * KEV_IN_J
+    z_restricted = (ETA / (sensitive_mass * g_ref)) * (h(ei) - h(ef)) * KEV_IN_J
     return z_restricted
 
 def dn1_de_continuous_mv_tables(cell_line, physics_list, particle = 0, method_threshold = "Interp"):
     """
     Returns a continous function that calculates dn1_de in function of energy. It depends on the radiobiological alpha
-    coefficient. These are extracted from alpha tables that Mario Alcoler-Avila calculated.
+    coefficient. These are extracted from alpha tables that Mario Alcocer-Avila calculated.
 
     The data are smoothered via a moving average method.
 
@@ -240,7 +241,7 @@ def _plot_dn1_de():
 def dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list, method_threshold = "Interp"):
     """
     Returns a continous function that calculates dn1_de in function of energy. It depends on the radiobiological alpha
-    coefficient. These are extracted from alpha tables that Mario Alcoler-Avila calculated. These coefficients are
+    coefficient. These are extracted from alpha tables that Mario Alcocer-Avila calculated. These coefficients are
     fitted on curves that contain both lethal and global events. Hence, a correction is needed to keep only lethal
     events.
 
@@ -274,7 +275,7 @@ def dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list
                           /
                           (length_of_cylinderslice_cell * _conversion_energy_in_let_g4))
 
-    _global_correction = (beta_g * (G(e_discrete_from_tables) / (sensitive_mass * g_ref))**2
+    _global_correction = (beta_g * (G(e_discrete_from_tables)*ETA / (sensitive_mass * g_ref))**2
                           * _conversion_energy_in_let_g4 * length_of_cylinderslice_cell) * (KEV_IN_J**2)
 
     dn1_de = _lethal_global_part - _global_correction
