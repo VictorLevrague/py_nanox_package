@@ -13,16 +13,28 @@ import pkg_resources
 import scipy.integrate
 import scipy.interpolate as interpolate
 
+
+# Define constants and unit conversion factors
+
 KEV_IN_J = 1.60218 * 1e-16
 WATER_DENSITY = 1e-15  #kg/µm³
 UNIT_COEFFICIENT_A = KEV_IN_J / WATER_DENSITY # Gy.µm³.keV-1
 BETAG = pd.DataFrame({"HSG" : [0.0961], "V79" : [0.0405], "CHO-K1" : [0.0625]}) #Gy-2. constant of Monini et al. 2019
 MOLECULE_PER_100_EV_IN_MOL_PER_J = 1 / (9.6 * 10**6)
-ETA = 0.8 # Fraction of energy related to biological damage
+ETA = 0.8 # Fraction of energy lost associated with biological damage
+G_REF = 6.33582 # Chemical yield for reference photon radiation considered at t = 1e-11 s
 
 radius_nucleus_cell_line = pd.DataFrame({"HSG" : [7], "V79" : [4.9], "CHO-K1" : [5.9]}) # µm
-simulated_radius_nucleus_cell_line = pd.DataFrame({"HSG" : [6.7], "V79" : [5.2], "CHO-K1" : [3.85]}) # µm
+#simulated_radius_nucleus_cell_line = pd.DataFrame({"HSG" : [6.7], "V79" : [5.2], "CHO-K1" : [3.85]}) # µm
+simulated_radius_nucleus_cell_line = pd.DataFrame({"HSG" : [7], "V79" : [5.2], "CHO-K1" : [3.85]}) # µm
 length_of_cylinderslice_cell = 1 #µm
+
+#Test for ellipsoid dimensions:
+#radius_nucleus_cell_line = pd.DataFrame({"HSG" : [7.05], "V79" : [4.9], "CHO-K1" : [5.9]}) # µm
+#simulated_radius_nucleus_cell_line = pd.DataFrame({"HSG" : [3.535], "V79" : [5.2], "CHO-K1" : [3.85]}) # µm
+#length_of_cylinderslice_cell = 1.25 #µm
+
+#######################
 
 
 def cell_survival_lethal(ei, ef, cell_line, particle, physics_list, option="cumulated"):
@@ -67,15 +79,15 @@ def cell_survival_global(ei, ef, cell_line, particle, option = "cumulated"):
     :return: returns the cell survival to global events of one cell
     """
     assert (particle == "Helium")
-    beta_ref = BETAG[cell_line].iloc[0]
+    beta_G = BETAG[cell_line].iloc[0]
 
-    z_restricted = z_restricted_func(ei, ef, cell_line)
+    z_tilde = z_tilde_func(ei, ef, cell_line)
 
     match option:
         case "cumulated":
-            global_survival = np.exp(-beta_ref * np.sum(z_restricted) ** 2)
+            global_survival = np.exp(-beta_G * np.sum(z_tilde) ** 2)
         case "mean_to_one_impact":
-            global_survival = np.exp(-beta_ref * z_restricted ** 2)
+            global_survival = np.exp(-beta_G * z_tilde ** 2)
         case _:
             raise InvalidOption("Choose cumulated or mean_to_one_impact option")
 
@@ -142,13 +154,33 @@ def cell_survival_lethal_without_global_correction(ei, ef, cell_line, particle, 
             raise InvalidOption("Choose cumulated or mean_to_one_impact option")
     return lethal_survival
 
-def z_restricted_func(ei, ef, cell_line):
+def z_tilde_func(ei, ef, cell_line):
+    """
+    Function to compute the chemical specific energy within the low-energy NanOx formalism
+
+    Parameters
+    ----------
+    ei : double or np.array
+        Entrance energy of particle in nucleus.
+    ef : double or np.array
+        Exit energy of particle in nucleus.
+    cell_line : str
+        HSG, V79 or CHO-K1
+
+    Returns
+    -------
+    z_tilde :
+        A function to compute the chemical specific energy.
+
+    """
     h = chemical_yield_and_primitive()[1]
-    volume_sensitive = (4 / 3) * np.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0]) ** 3
+    #volume_sensitive = (4 / 3) * math.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0]) ** 3
+    #volume_sensitive = (4/3) * math.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0]**2)*length_of_cylinderslice_cell
+    volume_sensitive = math.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0]**2)*length_of_cylinderslice_cell
+
     sensitive_mass = WATER_DENSITY * volume_sensitive #kg
-    g_ref = 6.33582
-    z_restricted = (ETA / (sensitive_mass * g_ref)) * (h(ei) - h(ef)) * KEV_IN_J
-    return z_restricted
+    z_tilde = (ETA / (sensitive_mass * G_REF)) * (h(ei) - h(ef)) * KEV_IN_J
+    return z_tilde
 
 def dn1_de_continuous_mv_tables(cell_line, physics_list, particle = 0, method_threshold = "Interp"):
     """
@@ -178,7 +210,9 @@ def dn1_de_continuous_mv_tables(cell_line, physics_list, particle = 0, method_th
 
     alpha_discrete_from_tables = alpha_table["Alpha (Gy-1)"].to_numpy().astype(float)
     e_discrete_from_tables = alpha_table["E(MeV/n)"].to_numpy().astype(float)*1000*4   #keV
+
     surface_centerslice_cell_line = math.pi * radius_nucleus_cell_line[cell_line].iloc[0] ** 2   # µm²
+
     let_discrete_from_tables = alpha_table["LET (keV/um)"].to_numpy().astype(float)
     _conversion_energy_in_let_srim = let_discrete_from_tables
     _conversion_energy_in_let_g4 = _conversion_energy_in_let(f"G4_{physics_list}", e_discrete_from_tables, particle)
@@ -257,17 +291,21 @@ def dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list
     alpha_table = pd.read_csv(f"{resources_dir}/AlphasTables/alpha_He_{cell_line}.csv")
     alpha_discrete_from_tables = alpha_table["Alpha (Gy-1)"].to_numpy().astype(float)
     e_discrete_from_tables = alpha_table["E(MeV/n)"].to_numpy().astype(float)*1000*4   #keV
+
     surface_centerslice_cell_line = math.pi * radius_nucleus_cell_line[cell_line].iloc[0] ** 2   #µm²
+
     let_discrete_from_tables = alpha_table["LET (keV/um)"].to_numpy().astype(float)
     _conversion_energy_in_let_srim = let_discrete_from_tables
     _conversion_energy_in_let_g4 = _conversion_energy_in_let(f"G4_{physics_list}", e_discrete_from_tables)
 
     e_discrete_from_tables_with_0 = np.insert(e_discrete_from_tables, 0, 0, axis=0)
 
-    volume_sensitive = (4/3) * np.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0])**3
+    #volume_sensitive = (4/3) * math.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0])**3
+    #volume_sensitive = (4/3) * math.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0]**2)*length_of_cylinderslice_cell
+    volume_sensitive = math.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0]**2)*length_of_cylinderslice_cell
+
     sensitive_mass = WATER_DENSITY * volume_sensitive
-    beta_g = 0.0961
-    g_ref = 6.33582
+    beta_G = BETAG[cell_line].iloc[0]
     G = chemical_yield_and_primitive()[0]
 
     _lethal_global_part = (-np.log(1 - alpha_discrete_from_tables  * UNIT_COEFFICIENT_A
@@ -275,11 +313,20 @@ def dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list
                           /
                           (length_of_cylinderslice_cell * _conversion_energy_in_let_g4))
 
-    _global_correction = (beta_g * (G(e_discrete_from_tables)*ETA / (sensitive_mass * g_ref))**2
+    _global_correction = (beta_G * (G(e_discrete_from_tables)*ETA / (sensitive_mass * G_REF))**2
                           * _conversion_energy_in_let_g4 * length_of_cylinderslice_cell) * (KEV_IN_J**2)
 
     dn1_de = _lethal_global_part - _global_correction
     #calculation of number of lethal events per keV
+
+    ####### testing volume ratio
+
+    volume_ratio = (math.pi * radius_nucleus_cell_line[cell_line].iloc[0]**2 * 1) \
+              /(math.pi * simulated_radius_nucleus_cell_line[cell_line].iloc[0]**2 * length_of_cylinderslice_cell)
+
+    dn1_de = dn1_de * volume_ratio
+
+    ########
 
     dn1_de = _moving_average_dn1_de_tables(dn1_de, cell_line)
 
@@ -394,12 +441,4 @@ class InvalidOption(Exception):
     """
     pass
 
-# print()
-# ei = [7500,7000]
-# ef = [0,0]
-# print("previous cell survival lethal: ", cell_survival_lethal_without_global_correction(ei, ef, "HSG",
-#                                                                                  particle = "Helium",
-#                                                                                  physics_list = "em"))
-# print("cell survival lethal: ",cell_survival_lethal(ei, ef, "HSG", particle = "Helium", physics_list = "em"))
-# print("cell survival global: ", cell_survival_global(ei, ef, "HSG", particle = "Helium"))
-# print("cell survival total: ", cell_survival_total(ei, ef, "HSG", particle = "Helium", physics_list = "em"))
+
