@@ -6,7 +6,7 @@ from .py_nanox_low_energy import cell_survival_lethal_without_global_correction
 from .py_nanox_low_energy import number_of_lethal_events_for_alpha_traversals
 from .py_nanox_low_energy import dn1_de_continuous_mv_tables
 from .py_nanox_low_energy import dn1_de_continuous_mv_tables_global_events_correction
-from .py_nanox_low_energy import z_restricted_func
+from .py_nanox_low_energy import z_tilde_func
 from .py_nanox_low_energy import _plot_dn1_de
 from .py_nanox_low_energy import _conversion_energy_in_let
 from .py_nanox_low_energy import _moving_average_dn1_de_tables
