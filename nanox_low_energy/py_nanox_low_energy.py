@@ -10,8 +10,10 @@ import numpy as np
 from os import path
 import pandas as pd
 import pkg_resources
+from scipy.misc import derivative
 import scipy.integrate
 import scipy.interpolate as interpolate
+import statsmodels.api as sm
 
 
 # Define constants and unit conversion factors
@@ -48,13 +50,14 @@ def cell_survival_lethal(ei, ef, cell_line, particle, physics_list, option="cumu
      "mean_to_one_impact" = mean cell survival to one impact
     :return: returns the cell survival to lethal events of one cell
     """
-    assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen")
+    assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
     dn1_de_continuous_pre_calculated = \
         dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list, particle)
     emax = np.max(ei)
     n1_function = number_of_lethal_events_for_alpha_traversals(dn1_de_continuous_pre_calculated, emax)
 
     n_lethal = (n1_function(ei) - n1_function(ef))
+    print("n_lethal: ", n_lethal)
 
     match option:
         case "cumulated":
@@ -76,7 +79,7 @@ def cell_survival_global(ei, ef, cell_line, particle, option = "cumulated"):
       "mean_to_one_impact" = mean cell survival to one impact
     :return: returns the cell survival to global events of one cell
     """
-    assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen")
+    assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
     beta_G = BETAG[cell_line].iloc[0]
 
     z_tilde = z_tilde_func(ei, ef, cell_line, particle)
@@ -102,7 +105,7 @@ def cell_survival_total(ei, ef, cell_line, particle, physics_list, option = "cum
       "mean_to_one_impact" = mean cell survival to one impact
     :return: returns the cell survival to lethal events of one cell
     """
-    assert(particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen")
+    assert(particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
 
     match option:
         case "cumulated":
@@ -117,6 +120,119 @@ def cell_survival_total(ei, ef, cell_line, particle, physics_list, option = "cum
             raise InvalidOption("Choose cumulated or mean_to_one_impact option")
 
     return lethal_survival * global_survival
+
+
+def cell_survival_total_no_global_correction(ei, ef, cell_line, particle, physics_list, option = "cumulated"):
+    """
+    :param ei: Entrance energy of particle in nucleus in keV. Can be double or numpy array
+    :param ef: Exit energy of particle in nucleus in keV. Can be double or numpy array
+    :param cell_line: HSG, V79 or CHO-K1
+    :param particle: only Helium or Hydrogen for now
+    :param physics_list: em or dna
+    :param option: "cumulated" = cell survival to all given impacts,
+      "mean_to_one_impact" = mean cell survival to one impact
+    :return: returns the cell survival to lethal events of one cell
+    """
+    assert(particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
+
+    match option:
+        case "cumulated":
+            lethal_survival = cell_survival_lethal_without_global_correction(ei, ef, cell_line, particle, physics_list)
+            global_survival = cell_survival_global(ei, ef, cell_line, particle)
+        case "mean_to_one_impact":
+            lethal_survival = cell_survival_lethal_without_global_correction(ei, ef, cell_line, particle, physics_list,
+                                                   option="mean_to_one_impact")
+            global_survival = cell_survival_global(ei, ef, cell_line, particle,
+                                                   option="mean_to_one_impact")
+        case _:
+            raise InvalidOption("Choose cumulated or mean_to_one_impact option")
+
+    return lethal_survival * global_survival
+
+r = 7 #um
+a = 0.1602 #Gy/keV/µm³
+
+sigma = np.pi * r**2
+
+energy = np.linspace(400, 20000,2000) #keV
+
+alpha_coeff = pd.read_csv("alpha_He_HSG.csv")
+
+energy_data = alpha_coeff["E(MeV/n)"] * 4000 #keV
+
+kind_interp = 'linear'
+
+alpha_func_scattered = interpolate.interp1d(energy_data, alpha_coeff["Alpha (Gy-1)"], fill_value="extrapolate", kind= kind_interp)
+alpha_smoothed_arr = sm.nonparametric.lowess(alpha_func_scattered(energy), energy, frac=0.08)
+alpha_func = interpolate.interp1d(alpha_smoothed_arr[:, 0], alpha_smoothed_arr[:, 1], fill_value="extrapolate", kind= kind_interp)
+
+let_tables = pd.read_csv("conversion_tables_G4_std_He.csv")
+
+energy_let_data = let_tables["E(keV)"]
+let = let_tables["LET(keV/um)"]
+
+let_func_g4 = interpolate.interp1d(energy_let_data, let, fill_value="extrapolate", kind= kind_interp)
+
+let_tables_srim = alpha_coeff["LET (keV/um)"]
+let_func_srim = interpolate.interp1d(energy_data, let_tables_srim, fill_value="extrapolate", kind= kind_interp)
+
+
+def n1(energy):
+    return - np.log(1 - (a * alpha_func(energy) * let_func_srim(energy)) / (sigma))
+
+def n1_let(energy):
+    return - np.log(1 - (a * alpha_func(energy) * let_func_srim(energy)) / (sigma)) / (let_func_g4(energy))
+
+
+n1_derivative_arr = derivative(n1, energy, dx=1e-6)
+n1_derivative = interpolate.interp1d(energy, n1_derivative_arr, fill_value="extrapolate", kind=kind_interp)
+
+def cell_survival_robin(ei, ef, cell_line, particle, physics_list, option = "cumulated"):
+    assert(particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
+
+    match option:
+        case "cumulated":
+            lethal_survival = cell_survival_lethal_robin(ei, ef, particle)
+            global_survival = cell_survival_global(ei, ef, cell_line, particle)
+        case "mean_to_one_impact":
+            lethal_survival = cell_survival_lethal_robin(ei, ef, particle,
+                                                   option="mean_to_one_impact")
+            global_survival = cell_survival_global(ei, ef, cell_line, particle,
+                                                   option="mean_to_one_impact")
+        case _:
+            raise InvalidOption("Choose cumulated or mean_to_one_impact option")
+
+    return lethal_survival * global_survival
+
+
+def cell_survival_lethal_robin(ei, ef, particle, option="cumulated"):
+    """
+    :param ei: Entrance energy of particle in nucleus. Can be double or numpy array
+    :param ef: Exit energy of particle in nucleus. Can be double or numpy array
+    :param cell_line: HSG, V79 or CHO-K1
+    :param particle: only Helium or Hydrogen for now
+    :param physics_list: em or dna
+    :param option: "cumulated" = cell survival to all given impacts,
+     "mean_to_one_impact" = mean cell survival to one impact
+    :return: returns the cell survival to lethal events of one cell
+    """
+    assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
+
+    emax = np.max(ei)
+    n1_integrated = number_of_lethal_events_for_alpha_traversals(n1_let, emax)
+
+    n_lethal = n1_integrated(ei) - n1_integrated(ef)
+    print("n_lethal: ", n_lethal)
+
+    match option:
+        case "cumulated":
+            lethal_survival = np.exp(-np.sum(n_lethal))
+        case "mean_to_one_impact":
+            lethal_survival = np.exp(-n_lethal)
+        case _:
+            raise InvalidOption("Choose cumulated or mean_to_one_impact option")
+    return lethal_survival
+
 
 def cell_survival_lethal_without_global_correction(ei, ef, cell_line, particle, physics_list, option = "cumulated"):
     """
@@ -134,7 +250,7 @@ def cell_survival_lethal_without_global_correction(ei, ef, cell_line, particle, 
      "mean_to_one_impact" = mean cell survival to one impact
     :return: returns the cell survival to lethal events of one cell
     """
-    assert(particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen")
+    assert(particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
     dn1_de_continuous_pre_calculated = dn1_de_continuous_mv_tables(cell_line, physics_list, particle)
     emax = np.max(ei)
     n1 = number_of_lethal_events_for_alpha_traversals(dn1_de_continuous_pre_calculated, emax)
@@ -169,7 +285,7 @@ def z_tilde_func(ei, ef, cell_line, particle):
         A function to compute the chemical specific energy.
 
     """
-    assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen")
+    assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
 
     h = chemical_yield_and_primitive(particle)[1]
     #volume_sensitive = (4 / 3) * math.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0]) ** 3
@@ -193,7 +309,7 @@ def dn1_de_continuous_mv_tables(cell_line, physics_list, particle, method_thresh
     - Last sets the value of every alpha under the threshold as the last dn1_de data, i.e. alpha(100 keV/n)
     """
 
-    assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen")
+    assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
 
     resources_dir = path.join(path.dirname(__file__), 'resources')
 
@@ -246,47 +362,136 @@ def dn1_de_continuous_mv_tables(cell_line, physics_list, particle, method_thresh
 
     return dn1_de_continuous
 
-def _plot_dn1_de(cell_line, physics_list, particle):
-    assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen")
+# def _plot_dn1_de(cell_line, physics_list, particle):
+#     assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
+#
+#     energy = np.linspace(0, 200000, 200000)
+#     # energy = np.linspace(400, 200000, 200000)
+#     dn1_dE_interp = dn1_de_continuous_mv_tables(cell_line, physics_list, particle) ###TO DO: change the call of func
+#     dn1_dE_zero = dn1_de_continuous_mv_tables(cell_line, physics_list, particle, method_threshold="Zero")
+#     dn1_dE_last = dn1_de_continuous_mv_tables(cell_line, physics_list, particle, method_threshold="Last")
+#     fig, ax = plt.subplots(figsize=(15, 12))
+#     plt.tick_params(axis='both', which='major', pad=9, length=15, width=2, colors='black')
+#     plt.minorticks_on()
+#     plt.tick_params(axis='both', which='minor', pad=9, direction='in', length=10, width=1)
+#     ax.spines['left'].set_linewidth(2)
+#     ax.spines['bottom'].set_linewidth(2)
+#     # Convert energy to MeV/n
+#     # Lithium
+#     if particle.capitalize() == "Lithium" :
+#         energy_per_nucleon = energy/7000 # MeV/n
+#     # Hydrogen
+#     elif particle.capitalize()  == "Hydrogen" :
+#         energy_per_nucleon = energy/1000 # MeV/n
+#     # Helium
+#     else:
+#         energy_per_nucleon = energy/4000 # MeV/n
+#
+#     ax.plot(energy_per_nucleon, dn1_dE_interp(energy), marker='>', linestyle="solid",
+#             markersize=0, color="blue", linewidth=3)
+#     ax.plot(energy_per_nucleon, dn1_dE_zero(energy), marker='>', linestyle="dotted",
+#             markersize=0, color="red", linewidth=3)
+#     ax.plot(energy_per_nucleon, dn1_dE_last(energy), marker='>', linestyle="dashed",
+#             markersize=0, color="green", linewidth=3)
+#     plt.ylabel('dn1/dE (keV-1)', fontsize=25, fontname="Arial", fontweight='bold', labelpad=9,
+#                color='black')
+#     plt.xlabel(f'Kinetic energy of {particle.lower()} ions (MeV/n)', fontsize=25, fontname="Arial",
+#                fontweight='bold', labelpad=9, color='black')
+#     plt.xticks(fontsize=21, fontname="Arial", color='black')
+#     plt.yticks(fontsize=21, fontname="Arial", color='black')
+#     plt.grid(True)
+#     ax.set_yscale('log')
+#     # plt.xscale('log')
+#     plt.xlim([0,0.15])
+#     plt.rc('font', family='Arial')  # legend font
+#     minor_locator = AutoMinorLocator(2)
+#     ax.xaxis.set_minor_locator(minor_locator)
+#     ax.spines['left'].set_linewidth(2)
+#     ax.spines['bottom'].set_linewidth(2)
+#     plt.savefig("dn1_dE.png")
+#     plt.show()
+#     return dn1_dE_interp
 
-    energy = np.linspace(400, 200000, 200000)
-    dn1_dE = dn1_de_continuous_mv_tables(cell_line, physics_list, particle) ###TO DO: change the call of func
+def _plot_dn1_de(cell_line, physics_list, particle):
+    assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
+
+    energy = np.linspace(0, 200000, 200000)
+    # energy = np.linspace(400, 200000, 200000)
+    dn1_dE_interp = dn1_de_continuous_mv_tables(cell_line, physics_list, particle) ###TO DO: change the call of func
+    dn1_dE_zero = dn1_de_continuous_mv_tables(cell_line, physics_list, particle, method_threshold="Zero")
+    dn1_dE_last = dn1_de_continuous_mv_tables(cell_line, physics_list, particle, method_threshold="Last")
     fig, ax = plt.subplots(figsize=(15, 12))
     plt.tick_params(axis='both', which='major', pad=9, length=15, width=2, colors='black')
     plt.minorticks_on()
     plt.tick_params(axis='both', which='minor', pad=9, direction='in', length=10, width=1)
     ax.spines['left'].set_linewidth(2)
     ax.spines['bottom'].set_linewidth(2)
-    # Convert energy to MeV/n
-    # Lithium
-    if particle.capitalize() == "Lithium" :
-        energy_per_nucleon = energy/7000 # MeV/n
-    # Hydrogen
-    elif particle.capitalize()  == "Hydrogen" :
-        energy_per_nucleon = energy/1000 # MeV/n
-    # Helium
-    else:
-        energy_per_nucleon = energy/4000 # MeV/n
 
-    ax.plot(energy_per_nucleon, dn1_dE(energy), marker='>', linestyle="solid",
+    ax.plot(energy/1000, dn1_dE_interp(energy), marker='>', linestyle="solid",
             markersize=0, color="blue", linewidth=3)
-    plt.ylabel('dn1/dE (keV-1)', fontsize=25, fontname="Arial", fontweight='bold', labelpad=9,
+    ax.plot(energy/1000, dn1_dE_zero(energy), marker='>', linestyle="dotted",
+            markersize=0, color="orange", linewidth=3)
+    ax.plot(energy/1000, dn1_dE_last(energy), marker='>', linestyle="dashed",
+            markersize=0, color="green", linewidth=3)
+    plt.ylabel(r'$\dfrac{dn}{dE} (keV^{-1})$', fontsize=25, fontname="Arial", fontweight='bold', labelpad=9,
                color='black')
-    plt.xlabel(f'Kinetic energy of {particle.lower()} ions (MeV/n)', fontsize=25, fontname="Arial",
+    plt.xlabel(f'Kinetic energy of {particle.lower()} ions (MeV)', fontsize=25, fontname="Arial",
                fontweight='bold', labelpad=9, color='black')
     plt.xticks(fontsize=21, fontname="Arial", color='black')
     plt.yticks(fontsize=21, fontname="Arial", color='black')
-    plt.grid(True)
+    ax.grid(which='major', color='#DDDDDD', linewidth=1)
+    ax.grid(which='minor', color='#EEEEEE', linewidth=1)
     ax.set_yscale('log')
-    plt.xscale('log')
+    # plt.xscale('log')
+    plt.xlim([0,0.60])
+    # plt.xlim([0,50])
     plt.rc('font', family='Arial')  # legend font
     minor_locator = AutoMinorLocator(2)
     ax.xaxis.set_minor_locator(minor_locator)
     ax.spines['left'].set_linewidth(2)
     ax.spines['bottom'].set_linewidth(2)
+    fig.tight_layout()
     plt.savefig("dn1_dE.png")
     plt.show()
-    return dn1_dE
+    return dn1_dE_interp
+
+# def _plot_n1(cell_line, physics_list, particle):
+#     assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
+#
+#     # dn1_de_continuous_pre_calculated = dn1_de_continuous_mv_tables(cell_line, physics_list, particle)
+#     # n1 = number_of_lethal_events_for_alpha_traversals(dn1_de_continuous_pre_calculated, 200000)
+#
+#     energy = np.linspace(400, 200000, 200000)
+#     fig, ax = plt.subplots(figsize=(15, 12))
+#     plt.tick_params(axis='both', which='major', pad=9, length=15, width=2, colors='black')
+#     plt.minorticks_on()
+#     plt.tick_params(axis='both', which='minor', pad=9, direction='in', length=10, width=1)
+#     ax.spines['left'].set_linewidth(2)
+#     ax.spines['bottom'].set_linewidth(2)
+#     ax.plot(energy/1000, n1(energy), marker='>', linestyle="solid",
+#             markersize=0, color="blue", linewidth=3, label="n1 (µm-1)")
+#     ax.plot(energy/1000, n1_let(energy), marker='>', linestyle="solid",
+#             markersize=0, color="blue", linewidth=3, label="n1_let (keV-1)")
+#     ax.plot(energy/1000, let_func_g4(energy), label= 'LET (keV.µm-1)')
+#     # plt.ylabel('n1 / LET', fontsize=25, fontname="Arial", fontweight='bold', labelpad=9,
+#     #            color='black')
+#     plt.xlabel(f'Kinetic energy of {particle.lower()} ions (MeV)', fontsize=25, fontname="Arial",
+#                fontweight='bold', labelpad=9, color='black')
+#     plt.xticks(fontsize=21, fontname="Arial", color='black')
+#     plt.yticks(fontsize=21, fontname="Arial", color='black')
+#     plt.grid(True)
+#     ax.set_yscale('log')
+#     plt.xscale('log')
+#     plt.rc('font', family='Arial')  # legend font
+#     minor_locator = AutoMinorLocator(2)
+#     ax.xaxis.set_minor_locator(minor_locator)
+#     ax.spines['left'].set_linewidth(2)
+#     ax.spines['bottom'].set_linewidth(2)
+#     plt.legend(loc=0, prop={'size': 30})
+#     plt.savefig("dn1_dE.png")
+#     plt.show()
+
+
 
 def dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list, particle, method_threshold = "Interp"):
     """
@@ -302,7 +507,7 @@ def dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list
     - Zero sets a strict value of 0 for every dn1_de under the threshold
     - Last sets the value of every alpha under the threshold as the last dn1_de data, i.e. alpha(100 keV/n)
     """
-    assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen")
+    assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
     resources_dir = path.join(path.dirname(__file__), 'resources')
 
     try:
@@ -341,8 +546,12 @@ def dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list
                           /
                           (length_of_cylinderslice_cell * _conversion_energy_in_let_g4))
 
+    # _global_correction = (beta_G * (G(e_discrete_from_tables)*ETA / (sensitive_mass * G_REF))**2
+    #                       * _conversion_energy_in_let_g4 * length_of_cylinderslice_cell) * (KEV_IN_J**2)
+
     _global_correction = (beta_G * (G(e_discrete_from_tables)*ETA / (sensitive_mass * G_REF))**2
                           * _conversion_energy_in_let_g4 * length_of_cylinderslice_cell) * (KEV_IN_J**2)
+
 
     dn1_de = _lethal_global_part - _global_correction
     #calculation of number of lethal events per keV
@@ -392,7 +601,7 @@ def number_of_lethal_events_for_alpha_traversals(dn1_de_function, max_energy):
 
 
 def chemical_yield_and_primitive(particle):
-    assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen")
+    assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
 
     resources_dir = path.join(path.dirname(__file__), 'resources')
 
@@ -438,7 +647,7 @@ def _conversion_energy_in_let(data_base, energy, particle):
     data_base in string format
     energy in keV
     """
-    assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen")
+    assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
 
     try:
         # Lithium
@@ -510,4 +719,17 @@ class InvalidOption(Exception):
     """
     pass
 
+# ei = [10000, 5000, 3000]
+# ef = [8000, 3000, 1000]
+# ei = [10000, 10000, 10000]
+# ef = [8000, 6000, 4000]
+ei = [6000, 6000, 6000]
+ef = [4000, 2000, 0]
 
+print("Without global events and correction: ", cell_survival_lethal_without_global_correction(ei, ef, "HSG", "helium",
+                                                                                 "em", option="mean_to_one_impact"))
+print("Without global events: ", cell_survival_lethal(ei, ef, "HSG", "helium",
+                                                                                 "em", option="mean_to_one_impact"))
+print("Only global events: ", cell_survival_global(ei, ef, "HSG", "helium", option="mean_to_one_impact"))
+print("With global events: ", cell_survival_total(ei, ef, "HSG", "helium",
+                                                                                 "em", option="mean_to_one_impact"))
