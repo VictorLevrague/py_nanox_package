@@ -39,7 +39,7 @@ length_of_cylinderslice_cell = 1 #µm
 #######################
 
 
-def cell_survival_lethal(ei, ef, cell_line, particle, physics_list, option="cumulated"):
+def cell_survival_lethal(ei, ef, cell_line, particle, physics_list, option="cumulated", let="GEANT4"):
     """
     :param ei: Entrance energy of particle in nucleus. Can be double or numpy array
     :param ef: Exit energy of particle in nucleus. Can be double or numpy array
@@ -52,12 +52,11 @@ def cell_survival_lethal(ei, ef, cell_line, particle, physics_list, option="cumu
     """
     assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
     dn1_de_continuous_pre_calculated = \
-        dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list, particle)
+        dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list, particle, let = let)
     emax = np.max(ei)
     n1_function = number_of_lethal_events_for_alpha_traversals(dn1_de_continuous_pre_calculated, emax)
 
     n_lethal = (n1_function(ei) - n1_function(ef))
-    print("n_lethal: ", n_lethal)
 
     match option:
         case "cumulated":
@@ -67,7 +66,6 @@ def cell_survival_lethal(ei, ef, cell_line, particle, physics_list, option="cumu
         case _:
             raise InvalidOption("Choose cumulated or mean_to_one_impact option")
     return lethal_survival
-
 
 def cell_survival_global(ei, ef, cell_line, particle, option = "cumulated"):
     """
@@ -94,7 +92,7 @@ def cell_survival_global(ei, ef, cell_line, particle, option = "cumulated"):
 
     return global_survival
 
-def cell_survival_total(ei, ef, cell_line, particle, physics_list, option = "cumulated"):
+def cell_survival_total(ei, ef, cell_line, particle, physics_list, option = "cumulated", let = "GEANT4"):
     """
     :param ei: Entrance energy of particle in nucleus in keV. Can be double or numpy array
     :param ef: Exit energy of particle in nucleus in keV. Can be double or numpy array
@@ -109,17 +107,18 @@ def cell_survival_total(ei, ef, cell_line, particle, physics_list, option = "cum
 
     match option:
         case "cumulated":
-            lethal_survival = cell_survival_lethal(ei, ef, cell_line, particle, physics_list)
+            lethal_survival = cell_survival_lethal(ei, ef, cell_line, particle, physics_list, let=let)
             global_survival = cell_survival_global(ei, ef, cell_line, particle)
         case "mean_to_one_impact":
             lethal_survival = cell_survival_lethal(ei, ef, cell_line, particle, physics_list,
-                                                   option="mean_to_one_impact")
+                                                   option="mean_to_one_impact", let=let)
             global_survival = cell_survival_global(ei, ef, cell_line, particle,
                                                    option="mean_to_one_impact")
         case _:
             raise InvalidOption("Choose cumulated or mean_to_one_impact option")
 
     return lethal_survival * global_survival
+
 
 
 def cell_survival_total_no_global_correction(ei, ef, cell_line, particle, physics_list, option = "cumulated"):
@@ -148,90 +147,6 @@ def cell_survival_total_no_global_correction(ei, ef, cell_line, particle, physic
             raise InvalidOption("Choose cumulated or mean_to_one_impact option")
 
     return lethal_survival * global_survival
-
-r = 7 #um
-a = 0.1602 #Gy/keV/µm³
-
-sigma = np.pi * r**2
-
-energy = np.linspace(400, 20000,2000) #keV
-
-alpha_coeff = pd.read_csv("alpha_He_HSG.csv")
-
-energy_data = alpha_coeff["E(MeV/n)"] * 4000 #keV
-
-kind_interp = 'linear'
-
-alpha_func_scattered = interpolate.interp1d(energy_data, alpha_coeff["Alpha (Gy-1)"], fill_value="extrapolate", kind= kind_interp)
-alpha_smoothed_arr = sm.nonparametric.lowess(alpha_func_scattered(energy), energy, frac=0.08)
-alpha_func = interpolate.interp1d(alpha_smoothed_arr[:, 0], alpha_smoothed_arr[:, 1], fill_value="extrapolate", kind= kind_interp)
-
-let_tables = pd.read_csv("conversion_tables_G4_std_He.csv")
-
-energy_let_data = let_tables["E(keV)"]
-let = let_tables["LET(keV/um)"]
-
-let_func_g4 = interpolate.interp1d(energy_let_data, let, fill_value="extrapolate", kind= kind_interp)
-
-let_tables_srim = alpha_coeff["LET (keV/um)"]
-let_func_srim = interpolate.interp1d(energy_data, let_tables_srim, fill_value="extrapolate", kind= kind_interp)
-
-
-def n1(energy):
-    return - np.log(1 - (a * alpha_func(energy) * let_func_srim(energy)) / (sigma))
-
-def n1_let(energy):
-    return - np.log(1 - (a * alpha_func(energy) * let_func_srim(energy)) / (sigma)) / (let_func_g4(energy))
-
-
-n1_derivative_arr = derivative(n1, energy, dx=1e-6)
-n1_derivative = interpolate.interp1d(energy, n1_derivative_arr, fill_value="extrapolate", kind=kind_interp)
-
-def cell_survival_robin(ei, ef, cell_line, particle, physics_list, option = "cumulated"):
-    assert(particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
-
-    match option:
-        case "cumulated":
-            lethal_survival = cell_survival_lethal_robin(ei, ef, particle)
-            global_survival = cell_survival_global(ei, ef, cell_line, particle)
-        case "mean_to_one_impact":
-            lethal_survival = cell_survival_lethal_robin(ei, ef, particle,
-                                                   option="mean_to_one_impact")
-            global_survival = cell_survival_global(ei, ef, cell_line, particle,
-                                                   option="mean_to_one_impact")
-        case _:
-            raise InvalidOption("Choose cumulated or mean_to_one_impact option")
-
-    return lethal_survival * global_survival
-
-
-def cell_survival_lethal_robin(ei, ef, particle, option="cumulated"):
-    """
-    :param ei: Entrance energy of particle in nucleus. Can be double or numpy array
-    :param ef: Exit energy of particle in nucleus. Can be double or numpy array
-    :param cell_line: HSG, V79 or CHO-K1
-    :param particle: only Helium or Hydrogen for now
-    :param physics_list: em or dna
-    :param option: "cumulated" = cell survival to all given impacts,
-     "mean_to_one_impact" = mean cell survival to one impact
-    :return: returns the cell survival to lethal events of one cell
-    """
-    assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
-
-    emax = np.max(ei)
-    n1_integrated = number_of_lethal_events_for_alpha_traversals(n1_let, emax)
-
-    n_lethal = n1_integrated(ei) - n1_integrated(ef)
-    print("n_lethal: ", n_lethal)
-
-    match option:
-        case "cumulated":
-            lethal_survival = np.exp(-np.sum(n_lethal))
-        case "mean_to_one_impact":
-            lethal_survival = np.exp(-n_lethal)
-        case _:
-            raise InvalidOption("Choose cumulated or mean_to_one_impact option")
-    return lethal_survival
 
 
 def cell_survival_lethal_without_global_correction(ei, ef, cell_line, particle, physics_list, option = "cumulated"):
@@ -421,37 +336,38 @@ def _plot_dn1_de(cell_line, physics_list, particle):
     dn1_dE_zero = dn1_de_continuous_mv_tables(cell_line, physics_list, particle, method_threshold="Zero")
     dn1_dE_last = dn1_de_continuous_mv_tables(cell_line, physics_list, particle, method_threshold="Last")
     fig, ax = plt.subplots(figsize=(15, 12))
-    plt.tick_params(axis='both', which='major', pad=9, length=15, width=2, colors='black')
+    plt.tick_params(axis='both', which='major', pad=9, length=15, width=3, colors='black')
     plt.minorticks_on()
-    plt.tick_params(axis='both', which='minor', pad=9, direction='in', length=10, width=1)
+    plt.tick_params(axis='both', which='minor', pad=9, direction='in', length=10, width=2)
     ax.spines['left'].set_linewidth(2)
     ax.spines['bottom'].set_linewidth(2)
 
     ax.plot(energy/1000, dn1_dE_interp(energy), marker='>', linestyle="solid",
-            markersize=0, color="blue", linewidth=3)
+            markersize=0, color="blue", linewidth=3, label="Interpolation")
     ax.plot(energy/1000, dn1_dE_zero(energy), marker='>', linestyle="dotted",
-            markersize=0, color="orange", linewidth=3)
+            markersize=0, color="orange", linewidth=3, label=r"$\alpha$ = 0 below 400 keV")
     ax.plot(energy/1000, dn1_dE_last(energy), marker='>', linestyle="dashed",
-            markersize=0, color="green", linewidth=3)
-    plt.ylabel(r'$\dfrac{dn}{dE} (keV^{-1})$', fontsize=25, fontname="Arial", fontweight='bold', labelpad=9,
+            markersize=0, color="green", linewidth=3, label=r"$\alpha$ = constant below 400 keV")
+    plt.ylabel(r'Nb of local lethal events per keV', fontsize=27, fontname="Arial", fontweight='bold', labelpad=9,
                color='black')
-    plt.xlabel(f'Kinetic energy of {particle.lower()} ions (MeV)', fontsize=25, fontname="Arial",
+    plt.xlabel(r'Initial kinetic energy of helium ions (MeV)', fontsize=27, fontname="Arial",
                fontweight='bold', labelpad=9, color='black')
-    plt.xticks(fontsize=21, fontname="Arial", color='black')
-    plt.yticks(fontsize=21, fontname="Arial", color='black')
-    ax.grid(which='major', color='#DDDDDD', linewidth=1)
-    ax.grid(which='minor', color='#EEEEEE', linewidth=1)
-    ax.set_yscale('log')
+    plt.xticks(fontsize=27, fontname="Arial", color='black')
+    plt.yticks(fontsize=27, fontname="Arial", color='black')
+    ax.grid(which='major', color='#DDDDDD', linewidth=2)
+    ax.grid(which='minor', color='#EEEEEE', linewidth=2)
+    # ax.set_yscale('log')
     # plt.xscale('log')
-    plt.xlim([0,0.60])
-    # plt.xlim([0,50])
+    # plt.xlim([0,0.60])
+    plt.xlim([0,50])
     plt.rc('font', family='Arial')  # legend font
+    plt.legend(loc=0, prop={'size': 28})
     minor_locator = AutoMinorLocator(2)
     ax.xaxis.set_minor_locator(minor_locator)
     ax.spines['left'].set_linewidth(2)
     ax.spines['bottom'].set_linewidth(2)
     fig.tight_layout()
-    plt.savefig("dn1_dE.png")
+    plt.savefig("dn1_dE.png", dpi = 600)
     plt.show()
     return dn1_dE_interp
 
@@ -493,7 +409,7 @@ def _plot_dn1_de(cell_line, physics_list, particle):
 
 
 
-def dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list, particle, method_threshold = "Interp"):
+def dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list, particle, let = "GEANT4", method_threshold = "Interp"):
     """
     Returns a continous function that calculates dn1_de in function of energy. It depends on the radiobiological alpha
     coefficient. These are extracted from alpha tables that Mario Alcocer-Avila calculated. These coefficients are
@@ -529,8 +445,19 @@ def dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list
     alpha_discrete_from_tables = alpha_table["Alpha (Gy-1)"].to_numpy().astype(float)
     surface_centerslice_cell_line = math.pi * radius_nucleus_cell_line[cell_line].iloc[0] ** 2   #µm²
     let_discrete_from_tables = alpha_table["LET (keV/um)"].to_numpy().astype(float)
-    _conversion_energy_in_let_srim = let_discrete_from_tables
+    _conversion_energy_in_let_lqd = let_discrete_from_tables
     _conversion_energy_in_let_g4 = _conversion_energy_in_let(f"G4_{physics_list}", e_discrete_from_tables, particle)
+
+    srim_tables = pd.read_csv(f"{resources_dir}/E_TEL/Srim2013.csv")
+    energy_srim2013 = srim_tables["E(keV)"]
+    let_srim2013 = srim_tables["LET(keV/um)"]
+    let_func_srim2013 = interpolate.interp1d(energy_srim2013, let_srim2013, kind="linear")
+
+    nist_tables = pd.read_csv(f"{resources_dir}/E_TEL/let_tables_nist_astar.csv")
+    energy_nist = nist_tables["Kinetic energy (MeV)"] * 1000 #keV
+    let_nist = nist_tables["LET electronic (keV/µm)"]
+    let_func_nist = interpolate.interp1d(energy_nist, let_nist, kind="linear")
+
     e_discrete_from_tables_with_0 = np.insert(e_discrete_from_tables, 0, 0, axis=0)
 
     #volume_sensitive = (4/3) * math.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0])**3
@@ -541,16 +468,24 @@ def dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list
     beta_G = BETAG[cell_line].iloc[0]
     G = chemical_yield_and_primitive(particle)[0]
 
-    _lethal_global_part = (-np.log(1 - alpha_discrete_from_tables  * UNIT_COEFFICIENT_A
-                             * _conversion_energy_in_let_srim / surface_centerslice_cell_line)
-                          /
-                          (length_of_cylinderslice_cell * _conversion_energy_in_let_g4))
+    match let:
+        case "LQD":
+            let_denominator = _conversion_energy_in_let_lqd
+        case "GEANT4":
+            let_denominator = _conversion_energy_in_let_g4
+        case "SRIM_2013":
+            let_denominator = let_func_srim2013(e_discrete_from_tables)
+        case "NIST_ASTAR":
+            let_denominator = let_func_nist(e_discrete_from_tables)
 
-    # _global_correction = (beta_G * (G(e_discrete_from_tables)*ETA / (sensitive_mass * G_REF))**2
-    #                       * _conversion_energy_in_let_g4 * length_of_cylinderslice_cell) * (KEV_IN_J**2)
+    _lethal_global_part = (-np.log(1 - alpha_discrete_from_tables  * UNIT_COEFFICIENT_A
+                             * _conversion_energy_in_let_lqd / surface_centerslice_cell_line)
+                          /
+                          (length_of_cylinderslice_cell * let_denominator))
+
 
     _global_correction = (beta_G * (G(e_discrete_from_tables)*ETA / (sensitive_mass * G_REF))**2
-                          * _conversion_energy_in_let_g4 * length_of_cylinderslice_cell) * (KEV_IN_J**2)
+                          * let_denominator * length_of_cylinderslice_cell) * (KEV_IN_J**2)
 
 
     dn1_de = _lethal_global_part - _global_correction
@@ -558,8 +493,9 @@ def dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list
 
     ####### testing volume ratio
 
-    volume_ratio = (math.pi * radius_nucleus_cell_line[cell_line].iloc[0]**2 * 1) \
-              /(math.pi * simulated_radius_nucleus_cell_line[cell_line].iloc[0]**2 * length_of_cylinderslice_cell)
+    volume_ratio = (math.pi * radius_nucleus_cell_line[cell_line].iloc[0] ** 2 * 1) \
+                   / (math.pi * simulated_radius_nucleus_cell_line[cell_line].iloc[0] ** 2 * length_of_cylinderslice_cell)
+    print("volume ratio = ", volume_ratio)
 
     dn1_de = dn1_de * volume_ratio
 
@@ -584,7 +520,6 @@ def dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list
                                                           "dn1_de_continuous_mv_tables")
 
     return dn1_de_continuous
-
 
 
 def number_of_lethal_events_for_alpha_traversals(dn1_de_function, max_energy):
@@ -718,18 +653,3 @@ class InvalidOption(Exception):
     Choose valid option
     """
     pass
-
-# ei = [10000, 5000, 3000]
-# ef = [8000, 3000, 1000]
-# ei = [10000, 10000, 10000]
-# ef = [8000, 6000, 4000]
-ei = [6000, 6000, 6000]
-ef = [4000, 2000, 0]
-
-print("Without global events and correction: ", cell_survival_lethal_without_global_correction(ei, ef, "HSG", "helium",
-                                                                                 "em", option="mean_to_one_impact"))
-print("Without global events: ", cell_survival_lethal(ei, ef, "HSG", "helium",
-                                                                                 "em", option="mean_to_one_impact"))
-print("Only global events: ", cell_survival_global(ei, ef, "HSG", "helium", option="mean_to_one_impact"))
-print("With global events: ", cell_survival_total(ei, ef, "HSG", "helium",
-                                                                                 "em", option="mean_to_one_impact"))
