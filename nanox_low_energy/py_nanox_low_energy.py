@@ -28,7 +28,8 @@ G_REF = 6.33582 # Chemical yield for reference photon radiation considered at t 
 
 radius_nucleus_cell_line = pd.DataFrame({"HSG" : [7], "V79" : [4.9], "CHO-K1" : [5.9]}) # µm
 #simulated_radius_nucleus_cell_line = pd.DataFrame({"HSG" : [6.7], "V79" : [5.2], "CHO-K1" : [3.85]}) # µm
-simulated_radius_nucleus_cell_line = pd.DataFrame({"HSG" : [7], "V79" : [5.2], "CHO-K1" : [3.85]}) # µm
+# simulated_radius_nucleus_cell_line = pd.DataFrame({"HSG" : [7], "V79" : [5.2], "CHO-K1" : [3.85]}) # µm
+simulated_radius_nucleus_cell_line = pd.DataFrame({"HSG" : [5.5], "V79" : [5.5], "CHO-K1" : [5.5]}) # µm
 length_of_cylinderslice_cell = 1 #µm
 
 #Test for ellipsoid dimensions:
@@ -490,16 +491,6 @@ def dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list
 
     dn1_de = _lethal_global_part - _global_correction
     #calculation of number of lethal events per keV
-
-    ####### testing volume ratio
-
-    volume_ratio = (math.pi * radius_nucleus_cell_line[cell_line].iloc[0] ** 2 * 1) \
-                   / (math.pi * simulated_radius_nucleus_cell_line[cell_line].iloc[0] ** 2 * length_of_cylinderslice_cell)
-    print("volume ratio = ", volume_ratio)
-
-    dn1_de = dn1_de * volume_ratio
-
-    ########
 
     dn1_de = _moving_average_dn1_de_tables(dn1_de, cell_line)
 
