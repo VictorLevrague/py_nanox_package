@@ -10,11 +10,8 @@ import numpy as np
 from os import path
 import pandas as pd
 import pkg_resources
-from scipy.misc import derivative
 import scipy.integrate
 import scipy.interpolate as interpolate
-import statsmodels.api as sm
-
 
 # Define constants and unit conversion factors
 
@@ -26,15 +23,14 @@ MOLECULE_PER_100_EV_IN_MOL_PER_J = 1 / (9.6 * 10**6)
 ETA = 0.8 # Fraction of energy lost associated with biological damage
 G_REF = 6.33582 # Chemical yield for reference photon radiation considered at t = 1e-11 s
 
-radius_nucleus_cell_line = pd.DataFrame({"HSG" : [7], "V79" : [4.9], "CHO-K1" : [5.9]}) # µm
-simulated_radius_nucleus_cell_line = pd.DataFrame({"HSG" : [6.7], "V79" : [5.2], "CHO-K1" : [3.85]}) # µm
-# simulated_radius_nucleus_cell_line = pd.DataFrame({"HSG" : [5.5], "V79" : [5.5], "CHO-K1" : [5.5]}) # µm
-length_of_cylinderslice_cell = 1 #µm
+r_nucleus_nanox = pd.DataFrame({"HSG" : [7], "V79" : [4.9], "CHO-K1" : [5.9]}) # µm
+r_nucleus_g4 = pd.DataFrame({"HSG" : [6.7], "V79" : [5.2], "CHO-K1" : [3.85]}) # µm
+length_target_nanox = 1 #µm
 
 #Test for ellipsoid dimensions:
-#radius_nucleus_cell_line = pd.DataFrame({"HSG" : [7.05], "V79" : [4.9], "CHO-K1" : [5.9]}) # µm
-#simulated_radius_nucleus_cell_line = pd.DataFrame({"HSG" : [3.535], "V79" : [5.2], "CHO-K1" : [3.85]}) # µm
-#length_of_cylinderslice_cell = 1.25 #µm
+#r_nucleus_nanox = pd.DataFrame({"HSG" : [7.05], "V79" : [4.9], "CHO-K1" : [5.9]}) # µm
+#r_nucleus_g4 = pd.DataFrame({"HSG" : [3.535], "V79" : [5.2], "CHO-K1" : [3.85]}) # µm
+#length_target_nanox = 1.25 #µm
 
 #######################
 
@@ -58,13 +54,12 @@ def cell_survival_lethal(ei, ef, cell_line, particle, physics_list, option="cumu
 
     n_lethal = (n1_function(ei) - n1_function(ef))
 
-    match option:
-        case "cumulated":
-            lethal_survival = np.exp(-np.sum(n_lethal))
-        case "mean_to_one_impact":
-            lethal_survival = np.exp(-n_lethal)
-        case _:
-            raise InvalidOption("Choose cumulated or mean_to_one_impact option")
+    if option == "cumulated":
+        lethal_survival = np.exp(-np.sum(n_lethal))
+    elif option == "mean_to_one_impact":
+        lethal_survival = np.exp(-n_lethal)
+    else:
+        raise InvalidOption("Choose cumulated or mean_to_one_impact option")
     return lethal_survival
 
 def cell_survival_global(ei, ef, cell_line, particle, option = "cumulated"):
@@ -82,13 +77,12 @@ def cell_survival_global(ei, ef, cell_line, particle, option = "cumulated"):
 
     z_tilde = z_tilde_func(ei, ef, cell_line, particle)
 
-    match option:
-        case "cumulated":
-            global_survival = np.exp(-beta_G * np.sum(z_tilde) ** 2)
-        case "mean_to_one_impact":
-            global_survival = np.exp(-beta_G * z_tilde ** 2)
-        case _:
-            raise InvalidOption("Choose cumulated or mean_to_one_impact option")
+    if option == "cumulated":
+        global_survival = np.exp(-beta_G * np.sum(z_tilde) ** 2)
+    elif option == "mean_to_one_impact":
+        global_survival = np.exp(-beta_G * z_tilde ** 2)
+    else:
+        raise InvalidOption("Choose cumulated or mean_to_one_impact option")
 
     return global_survival
 
@@ -105,17 +99,28 @@ def cell_survival_total(ei, ef, cell_line, particle, physics_list, option = "cum
     """
     assert(particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
 
-    match option:
-        case "cumulated":
-            lethal_survival = cell_survival_lethal(ei, ef, cell_line, particle, physics_list, let=let)
-            global_survival = cell_survival_global(ei, ef, cell_line, particle)
-        case "mean_to_one_impact":
-            lethal_survival = cell_survival_lethal(ei, ef, cell_line, particle, physics_list,
-                                                   option="mean_to_one_impact", let=let)
-            global_survival = cell_survival_global(ei, ef, cell_line, particle,
-                                                   option="mean_to_one_impact")
-        case _:
-            raise InvalidOption("Choose cumulated or mean_to_one_impact option")
+    # match option:
+    #     case "cumulated":
+    #         lethal_survival = cell_survival_lethal(ei, ef, cell_line, particle, physics_list, let=let)
+    #         global_survival = cell_survival_global(ei, ef, cell_line, particle)
+    #     case "mean_to_one_impact":
+    #         lethal_survival = cell_survival_lethal(ei, ef, cell_line, particle, physics_list,
+    #                                                option="mean_to_one_impact", let=let)
+    #         global_survival = cell_survival_global(ei, ef, cell_line, particle,
+    #                                                option="mean_to_one_impact")
+    #     case _:
+    #         raise InvalidOption("Choose cumulated or mean_to_one_impact option")
+
+    if option == "cumulated":
+        lethal_survival = cell_survival_lethal(ei, ef, cell_line, particle, physics_list, let=let)
+        global_survival = cell_survival_global(ei, ef, cell_line, particle)
+    elif option == "mean_to_one_impact":
+        lethal_survival = cell_survival_lethal(ei, ef, cell_line, particle, physics_list,
+                                               option="mean_to_one_impact", let=let)
+        global_survival = cell_survival_global(ei, ef, cell_line, particle,
+                                               option="mean_to_one_impact")
+    else:
+        raise InvalidOption("Choose cumulated or mean_to_one_impact option")
 
     return lethal_survival * global_survival
 
@@ -134,17 +139,16 @@ def cell_survival_total_no_global_correction(ei, ef, cell_line, particle, physic
     """
     assert(particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
 
-    match option:
-        case "cumulated":
-            lethal_survival = cell_survival_lethal_without_global_correction(ei, ef, cell_line, particle, physics_list)
-            global_survival = cell_survival_global(ei, ef, cell_line, particle)
-        case "mean_to_one_impact":
-            lethal_survival = cell_survival_lethal_without_global_correction(ei, ef, cell_line, particle, physics_list,
-                                                   option="mean_to_one_impact")
-            global_survival = cell_survival_global(ei, ef, cell_line, particle,
-                                                   option="mean_to_one_impact")
-        case _:
-            raise InvalidOption("Choose cumulated or mean_to_one_impact option")
+    if option == "cumulated":
+        lethal_survival = cell_survival_lethal_without_global_correction(ei, ef, cell_line, particle, physics_list)
+        global_survival = cell_survival_global(ei, ef, cell_line, particle)
+    elif option == "mean_to_one_impact":
+        lethal_survival = cell_survival_lethal_without_global_correction(ei, ef, cell_line, particle, physics_list,
+                                                                         option="mean_to_one_impact")
+        global_survival = cell_survival_global(ei, ef, cell_line, particle,
+                                               option="mean_to_one_impact")
+    else:
+        raise InvalidOption("Choose cumulated or mean_to_one_impact option")
 
     return lethal_survival * global_survival
 
@@ -172,13 +176,13 @@ def cell_survival_lethal_without_global_correction(ei, ef, cell_line, particle, 
 
     n_run = (n1(ei) - n1(ef))
 
-    match option:
-        case "cumulated":
-            lethal_survival = np.exp(-np.sum(n_run))
-        case "mean_to_one_impact":
-            lethal_survival = np.exp(-n_run)
-        case _:
-            raise InvalidOption("Choose cumulated or mean_to_one_impact option")
+    if option == "cumulated":
+        lethal_survival = np.exp(-np.sum(n_run))
+    elif option == "mean_to_one_impact":
+        lethal_survival = np.exp(-n_run)
+    else:
+        raise InvalidOption("Choose cumulated or mean_to_one_impact option")
+
     return lethal_survival
 
 def z_tilde_func(ei, ef, cell_line, particle):
@@ -203,9 +207,9 @@ def z_tilde_func(ei, ef, cell_line, particle):
     assert (particle.capitalize() == "Helium" or particle.capitalize() == "Hydrogen" or particle.capitalize() == "Lithium")
 
     h = chemical_yield_and_primitive(particle)[1]
-    #volume_sensitive = (4 / 3) * math.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0]) ** 3
-    #volume_sensitive = (4/3) * math.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0]**2)*length_of_cylinderslice_cell
-    volume_sensitive = math.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0]**2)*length_of_cylinderslice_cell
+    #volume_sensitive = (4 / 3) * math.pi * (r_nucleus_g4[cell_line].iloc[0]) ** 3
+    #volume_sensitive = (4/3) * math.pi * (r_nucleus_g4[cell_line].iloc[0]**2)*length_target_nanox
+    volume_sensitive = math.pi * (r_nucleus_g4[cell_line].iloc[0]**2)*length_target_nanox
 
     sensitive_mass = WATER_DENSITY * volume_sensitive #kg
     z_tilde = (ETA / (sensitive_mass * G_REF)) * (h(ei) - h(ef)) * KEV_IN_J
@@ -245,7 +249,7 @@ def dn1_de_continuous_mv_tables(cell_line, physics_list, particle, method_thresh
     alpha_discrete_from_tables = alpha_table["Alpha (Gy-1)"].to_numpy().astype(float)
     e_discrete_from_tables = alpha_table["E(MeV/n)"].to_numpy().astype(float)*1000*4   #keV
 
-    surface_centerslice_cell_line = math.pi * radius_nucleus_cell_line[cell_line].iloc[0] ** 2   # µm²
+    surface_centerslice_cell_line = math.pi * r_nucleus_nanox[cell_line].iloc[0] ** 2   # µm²
 
     let_discrete_from_tables = alpha_table["LET (keV/um)"].to_numpy().astype(float)
     _conversion_energy_in_let_srim = let_discrete_from_tables
@@ -255,7 +259,7 @@ def dn1_de_continuous_mv_tables(cell_line, physics_list, particle, method_thresh
 
     dn1_de = -np.log(1 - alpha_discrete_from_tables  * UNIT_COEFFICIENT_A \
                              * _conversion_energy_in_let_srim / surface_centerslice_cell_line) \
-             / (length_of_cylinderslice_cell * _conversion_energy_in_let_g4)
+             / (length_target_nanox * _conversion_energy_in_let_g4)
                     #calculation of number of lethal events per keV
 
     dn1_de = _moving_average_dn1_de_tables(dn1_de, cell_line)
@@ -443,7 +447,7 @@ def dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list
         raise MissingAlphaFile(f"The alpha table for {particle} in {cell_line} was not found")
 
     alpha_discrete_from_tables = alpha_table["Alpha (Gy-1)"].to_numpy().astype(float)
-    surface_centerslice_cell_line = math.pi * radius_nucleus_cell_line[cell_line].iloc[0] ** 2   #µm²
+    surface_centerslice_cell_line = math.pi * r_nucleus_nanox[cell_line].iloc[0] ** 2   #µm²
     let_discrete_from_tables = alpha_table["LET (keV/um)"].to_numpy().astype(float)
     _conversion_energy_in_let_lqd = let_discrete_from_tables
     _conversion_energy_in_let_g4 = _conversion_energy_in_let(f"G4_{physics_list}", e_discrete_from_tables, particle)
@@ -460,32 +464,41 @@ def dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list
 
     e_discrete_from_tables_with_0 = np.insert(e_discrete_from_tables, 0, 0, axis=0)
 
-    #volume_sensitive = (4/3) * math.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0])**3
-    #volume_sensitive = (4/3) * math.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0]**2)*length_of_cylinderslice_cell
-    volume_sensitive = math.pi * (simulated_radius_nucleus_cell_line[cell_line].iloc[0]**2)*length_of_cylinderslice_cell
+    #volume_sensitive = (4/3) * math.pi * (r_nucleus_g4[cell_line].iloc[0])**3
+    #volume_sensitive = (4/3) * math.pi * (r_nucleus_g4[cell_line].iloc[0]**2)*length_target_nanox
+    volume_sensitive = math.pi * (r_nucleus_g4[cell_line].iloc[0]**2)*length_target_nanox
 
     sensitive_mass = WATER_DENSITY * volume_sensitive
     beta_G = BETAG[cell_line].iloc[0]
     G = chemical_yield_and_primitive(particle)[0]
 
-    match let:
-        case "LQD":
-            let_denominator = _conversion_energy_in_let_lqd
-        case "GEANT4":
-            let_denominator = _conversion_energy_in_let_g4
-        case "SRIM_2013":
-            let_denominator = let_func_srim2013(e_discrete_from_tables)
-        case "NIST_ASTAR":
-            let_denominator = let_func_nist(e_discrete_from_tables)
+    # match let:
+    #     case "LQD":
+    #         let_denominator = _conversion_energy_in_let_lqd
+    #     case "GEANT4":
+    #         let_denominator = _conversion_energy_in_let_g4
+    #     case "SRIM_2013":
+    #         let_denominator = let_func_srim2013(e_discrete_from_tables)
+    #     case "NIST_ASTAR":
+    #         let_denominator = let_func_nist(e_discrete_from_tables)
+
+    if let == "LQD":
+        let_denominator = _conversion_energy_in_let_lqd
+    elif let == "GEANT4":
+        let_denominator = _conversion_energy_in_let_g4
+    elif let == "SRIM_2013":
+        let_denominator = let_func_srim2013(e_discrete_from_tables)
+    elif let == "NIST_ASTAR":
+        let_denominator = let_func_nist(e_discrete_from_tables)
 
     _lethal_global_part = (-np.log(1 - alpha_discrete_from_tables  * UNIT_COEFFICIENT_A
                              * _conversion_energy_in_let_lqd / surface_centerslice_cell_line)
                           /
-                          (length_of_cylinderslice_cell * let_denominator))
+                          (length_target_nanox * let_denominator))
 
 
     _global_correction = (beta_G * (G(e_discrete_from_tables)*ETA / (sensitive_mass * G_REF))**2
-                          * let_denominator * length_of_cylinderslice_cell) * (KEV_IN_J**2)
+                          * let_denominator * length_target_nanox) * (KEV_IN_J**2)
 
 
     dn1_de = _lethal_global_part - _global_correction
@@ -493,21 +506,27 @@ def dn1_de_continuous_mv_tables_global_events_correction(cell_line, physics_list
 
     dn1_de = _moving_average_dn1_de_tables(dn1_de, cell_line)
 
-    match method_threshold:
-        case "Interp":
-            dn1_de = np.insert(dn1_de, 0, 0, axis=0)
-            dn1_de_continuous = interpolate.interp1d(e_discrete_from_tables_with_0, dn1_de, kind="linear")
-        case "Zero":
-            dn1_de_continuous = interpolate.interp1d(e_discrete_from_tables, dn1_de,
-                                                                      fill_value=(0,"extrapolate"), kind="linear",
-                                                                      bounds_error=False)
-        case "Last":
-            dn1_de_continuous = interpolate.interp1d(e_discrete_from_tables, dn1_de,
-                                                                  fill_value=(dn1_de[0],"extrapolate"), kind="linear",
-                                                                  bounds_error=False)
-        case _:
-            raise UnexistingMethodAlphaCoeffExtrapolation("Choose an existing method for the call of "
-                                                          "dn1_de_continuous_mv_tables")
+    volume_cylinder_nanox = np.pi * r_nucleus_nanox[cell_line].iloc[0]**2 * length_target_nanox
+    volume_sphere_g4 = (4/3) * np.pi * (r_nucleus_g4[cell_line].iloc[0]**3)
+
+    volume_ratio = volume_cylinder_nanox / volume_sphere_g4
+
+    dn1_de *= volume_ratio
+
+    if method_threshold == "Interp":
+        dn1_de = np.insert(dn1_de, 0, 0, axis=0)
+        dn1_de_continuous = interpolate.interp1d(e_discrete_from_tables_with_0, dn1_de, kind="linear")
+    elif method_threshold == "Zero":
+        dn1_de_continuous = interpolate.interp1d(e_discrete_from_tables, dn1_de,
+                                                 fill_value=(0, "extrapolate"), kind="linear",
+                                                 bounds_error=False)
+    elif method_threshold == "Last":
+        dn1_de_continuous = interpolate.interp1d(e_discrete_from_tables, dn1_de,
+                                                 fill_value=(dn1_de[0], "extrapolate"), kind="linear",
+                                                 bounds_error=False)
+    else:
+        raise UnexistingMethodAlphaCoeffExtrapolation("Choose an existing method for the call of "
+                                                      "dn1_de_continuous_mv_tables")
 
     return dn1_de_continuous
 
